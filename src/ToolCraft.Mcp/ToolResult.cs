@@ -128,11 +128,13 @@ public static class ToolResult
     }
 
     /// <summary>
-    /// Builds a failure envelope for an exception that escaped the tool body. The message
-    /// is included; stack traces and internals are not, because they leak implementation
-    /// detail into agent context without helping it recover.
+    /// Builds a failure envelope for a tool that failed while executing. The message must
+    /// already be safe to show to clients: no exception text, paths, queries, or other
+    /// internals, because everything in the envelope lands in agent context.
+    /// <see cref="ToolRunner"/> passes a stable message with a reference id and routes the
+    /// exception detail to the audit entry instead.
     /// </summary>
-    /// <param name="message">A safe, single-sentence description of the failure.</param>
+    /// <param name="message">A client-safe, single-sentence description of the failure.</param>
     public static ToolResult<T> Failed<T>(string message)
         => new()
         {

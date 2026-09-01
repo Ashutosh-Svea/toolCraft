@@ -100,7 +100,7 @@ public sealed class IncidentTools
             _searchTicketsValidator,
             _auditor,
             McpCallerInfo.Describe(server),
-            cancellationToken);
+            cancellationToken: cancellationToken);
 
     [McpServerTool(Name = "get_ticket", ReadOnly = true, Idempotent = true, OpenWorld = false, UseStructuredContent = true)]
     [Description("Fetches one support ticket by id. An unknown id returns the closest known ids so a mistyped id can be corrected.")]
@@ -129,7 +129,7 @@ public sealed class IncidentTools
             _getTicketValidator,
             _auditor,
             McpCallerInfo.Describe(server),
-            cancellationToken);
+            cancellationToken: cancellationToken);
 
     [McpServerTool(Name = "query_telemetry", ReadOnly = true, Idempotent = true, OpenWorld = false, UseStructuredContent = true)]
     [Description("Queries telemetry events by service, minimum level, time range, and message text. The time range defaults to the recent past; scanning more than 6 hours requires scanAllHistory=true.")]
@@ -155,10 +155,23 @@ public sealed class IncidentTools
                 if (args.ScanAllHistory)
                 {
                     var oldest = _data.Telemetry.Count > 0 ? _data.Telemetry[0].Timestamp : _data.Anchor;
-                    window = new TimeWindow(
-                        args.From ?? oldest,
-                        args.To ?? _data.Anchor);
-                    appliedDefaults.Add("scanAllHistory is set, so the window spans the full retained history");
+                    if (args.From is null && args.To is null)
+                    {
+                        window = new TimeWindow(oldest, _data.Anchor);
+                        appliedDefaults.Add("scanAllHistory is set and no bounds were given, so the window spans the full retained history");
+                    }
+                    else
+                    {
+                        // Explicit bounds win even with the opt-in set; only the missing
+                        // side falls back, and a reversed range is swapped with a note.
+                        var historySpan = _data.Anchor - oldest;
+                        window = SafeDefaults.ResolveTimeWindow(
+                            args.From,
+                            args.To,
+                            historySpan > TimeSpan.Zero ? historySpan : TimeSpan.FromHours(24),
+                            _data.Anchor,
+                            appliedDefaults);
+                    }
                 }
                 else
                 {
@@ -194,11 +207,17 @@ public sealed class IncidentTools
                             ? "nothing matched, and the window defaulted to only the last 2 hours"
                             : "nothing matched the filters inside the requested window",
                         appliedDefaults,
-                        nextSteps:
-                        [
-                            "Widen the window with from/to, or set scanAllHistory to true for the full history.",
-                            "Drop the level or text filter to see what is there.",
-                        ]));
+                        nextSteps: args.ScanAllHistory
+                            ?
+                            [
+                                "Drop the level or text filter to see what is there.",
+                                "Check the service name; the relevant events may belong to a different service.",
+                            ]
+                            :
+                            [
+                                "Widen the window with from/to, or set scanAllHistory to true for the full history.",
+                                "Drop the level or text filter to see what is there.",
+                            ]));
                 }
 
                 var (page, truncation) = Truncation.Apply(
@@ -218,10 +237,10 @@ public sealed class IncidentTools
             _queryTelemetryValidator,
             _auditor,
             McpCallerInfo.Describe(server),
-            cancellationToken);
+            cancellationToken: cancellationToken);
 
     [McpServerTool(Name = "get_service_health", ReadOnly = true, Idempotent = true, OpenWorld = false, UseStructuredContent = true)]
-    [Description("Classifies services as healthy, degraded, or down from telemetry in the last 2 hours plus active tickets. Omit service to get all services.")]
+    [Description("Classifies services as healthy, degraded, or down from telemetry in the last 2 hours, and reports each service's active ticket count alongside. Omit service to get all services.")]
     public Task<ToolResult<IReadOnlyList<ServiceHealth>>> GetServiceHealth(
         McpServer server,
         [Description("One service name to check, for example auth. Omit for all services.")] string? service = null,
@@ -259,7 +278,7 @@ public sealed class IncidentTools
             _getServiceHealthValidator,
             _auditor,
             McpCallerInfo.Describe(server),
-            cancellationToken);
+            cancellationToken: cancellationToken);
 
     [McpServerTool(Name = "correlate_incident", ReadOnly = true, Idempotent = true, OpenWorld = false, UseStructuredContent = true)]
     [Description("Given a ticket id, returns telemetry that overlaps the ticket's time window and its services (including direct dependencies), so the likely cause can be read in story order.")]
@@ -280,9 +299,12 @@ public sealed class IncidentTools
                         nextSteps: ["Use search_tickets to find valid ticket ids."]));
                 }
 
+                // A resolved ticket has a bounded lifetime; an unresolved one is still
+                // happening, so its window runs through the sandbox's current time.
+                var lastActivity = ticket.UpdatedAt > ticket.OpenedAt ? ticket.UpdatedAt : ticket.OpenedAt;
                 var window = new TimeWindow(
                     ticket.OpenedAt - CorrelationPadding,
-                    (ticket.UpdatedAt > ticket.OpenedAt ? ticket.UpdatedAt : ticket.OpenedAt) + CorrelationPadding);
+                    ticket.Status == TicketStatus.Resolved ? lastActivity + CorrelationPadding : _data.Anchor);
                 var services = _data.RelatedServices(ticket);
 
                 var matches = _data.Telemetry
@@ -337,7 +359,7 @@ public sealed class IncidentTools
             _correlateIncidentValidator,
             _auditor,
             McpCallerInfo.Describe(server),
-            cancellationToken);
+            cancellationToken: cancellationToken);
 
     private ServiceHealth ComputeHealth(string serviceName, TimeWindow window)
     {

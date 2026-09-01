@@ -15,30 +15,51 @@ public static class CorrectiveValidation
     /// <summary>
     /// Requires the value, when set, to be one of the known values (case insensitive).
     /// A rejected value fails with an "unknown_value" corrective error that lists the
-    /// closest known values. Null passes: optional parameters stay optional.
+    /// closest known values. Null passes: optional parameters stay optional. The
+    /// provider is evaluated exactly once per validation, so the check, the message,
+    /// and the suggestions always agree even when the known set changes between calls.
     /// </summary>
     /// <param name="rule">The rule builder for an optional string parameter.</param>
     /// <param name="parameterName">The schema name of the parameter, used in the error text.</param>
-    /// <param name="knownValues">Provider of the accepted values, evaluated at validation time.</param>
-    public static IRuleBuilderOptions<T, string?> MustBeOneOf<T>(
+    /// <param name="knownValues">Provider of the accepted values, evaluated once at validation time.</param>
+    public static IRuleBuilderOptionsConditions<T, string?> MustBeOneOf<T>(
         this IRuleBuilder<T, string?> rule,
         string parameterName,
         Func<IEnumerable<string>> knownValues)
     {
         ArgumentNullException.ThrowIfNull(knownValues);
-        return rule
-            .Must(value => value is null
-                || knownValues().Contains(value, StringComparer.OrdinalIgnoreCase))
-            .WithState((_, value) => CorrectiveError.UnknownValue(parameterName, value!, knownValues()))
-            .WithMessage((_, value) => CorrectiveError.UnknownValue(parameterName, value!, knownValues()).Message);
+        return rule.Custom((value, context) =>
+        {
+            if (value is null)
+            {
+                return;
+            }
+
+            var provided = knownValues();
+            var known = provided as IReadOnlyCollection<string> ?? provided.ToArray();
+            if (known.Contains(value, StringComparer.OrdinalIgnoreCase))
+            {
+                return;
+            }
+
+            var error = CorrectiveError.UnknownValue(parameterName, value, known);
+            context.AddFailure(new ValidationFailure(context.PropertyPath, error.Message)
+            {
+                ErrorCode = CorrectiveError.UnknownValueCode,
+                CustomState = error,
+            });
+        });
     }
 
     /// <summary>
     /// Attaches a corrective error to a rule, replacing the failure message with the
-    /// error's message so text and structure never disagree.
+    /// error's message so text and structure never disagree. The factory must be pure
+    /// and cheap: FluentValidation evaluates state and message separately, so the
+    /// factory can run more than once per failure and impure factories can disagree
+    /// with themselves.
     /// </summary>
     /// <param name="rule">The rule to attach the error to.</param>
-    /// <param name="factory">Builds the corrective error from the validated instance and the rejected value.</param>
+    /// <param name="factory">Builds the corrective error from the validated instance and the rejected value. Must be pure.</param>
     public static IRuleBuilderOptions<T, TProperty> WithCorrectiveError<T, TProperty>(
         this IRuleBuilderOptions<T, TProperty> rule,
         Func<T, TProperty, CorrectiveError> factory)

@@ -29,6 +29,13 @@ public sealed record ToolAuditEntry
 
     /// <summary>The summary sentence the envelope returned, or null when the call produced no envelope.</summary>
     public string? Summary { get; init; }
+
+    /// <summary>
+    /// The exception type and message when the outcome is <see cref="ToolOutcome.Error"/>,
+    /// prefixed with the reference id the client received. This detail exists only in the
+    /// audit trail; the client envelope never carries it.
+    /// </summary>
+    public string? FailureDetail { get; init; }
 }
 
 /// <summary>
@@ -63,12 +70,13 @@ public sealed class SerilogToolAuditor : IToolAuditor
     {
         ArgumentNullException.ThrowIfNull(entry);
         _logger.Information(
-            "Tool {Tool} called by {Caller} finished {Outcome} in {DurationMs} ms; arguments {Arguments}; summary {Summary}",
+            "Tool {Tool} called by {Caller} finished {Outcome} in {DurationMs} ms; arguments {Arguments}; summary {Summary}; failure {FailureDetail}",
             entry.Tool,
             entry.Caller,
             entry.Outcome,
             entry.Duration.TotalMilliseconds,
             entry.ArgumentsJson,
-            entry.Summary);
+            entry.Summary,
+            entry.FailureDetail);
     }
 }

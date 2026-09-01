@@ -200,6 +200,15 @@ for anything else without touching tool code. Auditing never affects the
 call: a throwing auditor is swallowed by design, because observability must
 not turn a working tool into a broken one.
 
+Two boundaries keep the trail safe. Argument capture is a choice: the runner
+accepts a redaction hook that projects or masks arguments before they enter
+the entry, or suppresses them entirely; the sandbox captures everything only
+because its data is invented. And exception detail flows one way: when a tool
+body throws, the client envelope carries a stable message with a reference id
+while the exception type and message land in the audit entry's failure
+detail, so internals never reach agent context but the operator can still
+match a report to its cause.
+
 ## How the pieces fit
 
 `ToolRunner.RunAsync` is where the patterns meet: it validates arguments into

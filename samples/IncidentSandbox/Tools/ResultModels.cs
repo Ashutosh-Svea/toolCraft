@@ -52,7 +52,10 @@ public sealed record CorrelationResult
     [JsonPropertyName("ticket")]
     public required Ticket Ticket { get; init; }
 
-    /// <summary>The correlation window: ticket lifetime padded by 30 minutes on each side.</summary>
+    /// <summary>
+    /// The correlation window: from 30 minutes before the ticket opened until 30 minutes
+    /// after its last update for resolved tickets, or until now for unresolved ones.
+    /// </summary>
     [JsonPropertyName("window_from")]
     public required DateTimeOffset WindowFrom { get; init; }
 

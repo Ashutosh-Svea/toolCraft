@@ -1,5 +1,7 @@
 # ToolCraft.Mcp
 
+[![CI](https://github.com/Ashutosh-Svea/toolCraft/actions/workflows/ci.yml/badge.svg)](https://github.com/Ashutosh-Svea/toolCraft/actions/workflows/ci.yml)
+
 ToolCraft.Mcp is a small C# library on top of the official ModelContextProtocol
 SDK for building MCP tools that unreliable agents cannot easily misuse: every
 result is an envelope that explains itself, invalid parameters come back as
@@ -26,7 +28,7 @@ detail.
 Requires the .NET 10 SDK.
 
 ```bash
-git clone <your-clone-url> toolcraft && cd toolcraft
+git clone https://github.com/Ashutosh-Svea/toolCraft.git && cd toolCraft
 ```
 
 ```bash
@@ -75,7 +77,7 @@ Add to `claude_desktop_config.json` (adjust the path):
   "mcpServers": {
     "incident-sandbox": {
       "command": "dotnet",
-      "args": ["run", "--project", "/path/to/toolcraft/samples/IncidentSandbox"]
+      "args": ["run", "--project", "/path/to/toolCraft/samples/IncidentSandbox"]
     }
   }
 }
@@ -84,7 +86,7 @@ Add to `claude_desktop_config.json` (adjust the path):
 ### Claude Code
 
 ```bash
-claude mcp add incident-sandbox -- dotnet run --project /path/to/toolcraft/samples/IncidentSandbox
+claude mcp add incident-sandbox -- dotnet run --project /path/to/toolCraft/samples/IncidentSandbox
 ```
 
 ### VS Code / Copilot
@@ -97,7 +99,7 @@ Add to `.vscode/mcp.json` in a workspace, or to your user `mcp.json`:
     "incident-sandbox": {
       "type": "stdio",
       "command": "dotnet",
-      "args": ["run", "--project", "/path/to/toolcraft/samples/IncidentSandbox"]
+      "args": ["run", "--project", "/path/to/toolCraft/samples/IncidentSandbox"]
     }
   }
 }

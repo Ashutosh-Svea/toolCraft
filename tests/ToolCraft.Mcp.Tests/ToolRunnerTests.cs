@@ -7,7 +7,7 @@ namespace ToolCraft.Mcp.Tests;
 
 public class ToolRunnerTests
 {
-    private sealed record EchoArgs(string? Text);
+    public sealed record EchoArgs(string? Text);
 
     private sealed class EchoArgsValidator : AbstractValidator<EchoArgs>
     {
@@ -87,20 +87,95 @@ public class ToolRunnerTests
     }
 
     [Fact]
-    public async Task RunAsync_BodyThrows_ReturnsASafeFailureEnvelopeInsteadOfThrowing()
+    public async Task RunAsync_BodyThrows_HidesTheExceptionFromTheClientButAuditsIt()
     {
         var auditor = new RecordingAuditor();
 
         var result = await ToolRunner.RunAsync<EchoArgs, string>(
             "echo",
             new EchoArgs("hello"),
-            (_, _) => throw new InvalidOperationException("the dataset is not loaded"),
+            (_, _) => throw new InvalidOperationException("connection string Server=db-internal failed"),
             auditor: auditor);
 
         result.Diagnostics.Status.Should().Be(ToolOutcome.Error);
-        result.Summary.Should().Contain("the dataset is not loaded");
+
+        // The client sees a stable message and a reference id, never exception internals.
+        result.Summary.Should().Contain("reference");
+        result.Summary.Should().NotContain("db-internal");
         result.Summary.Should().NotContain("InvalidOperationException");
+        result.Diagnostics.Errors.Should().ContainSingle()
+            .Which.Message.Should().NotContain("db-internal");
+
+        // The audit entry carries the detail and the same reference id.
+        var entry = auditor.Entries.Should().ContainSingle().Subject;
+        entry.Outcome.Should().Be(ToolOutcome.Error);
+        entry.FailureDetail.Should().Contain("InvalidOperationException")
+            .And.Contain("db-internal")
+            .And.Contain("reference");
+    }
+
+    [Fact]
+    public async Task RunAsync_ValidatorThrows_IsShieldedAndAuditedLikeAnyOtherFailure()
+    {
+        var auditor = new RecordingAuditor();
+        var validator = new Mock<IValidator<EchoArgs>>();
+        validator.Setup(v => v.ValidateAsync(It.IsAny<EchoArgs>(), It.IsAny<CancellationToken>()))
+            .ThrowsAsync(new InvalidOperationException("validator dependency exploded"));
+
+        var result = await ToolRunner.RunAsync<EchoArgs, string>(
+            "echo",
+            new EchoArgs("hello"),
+            (_, _) => Task.FromResult(ToolResult.Ok("never", "never")),
+            validator: validator.Object,
+            auditor: auditor);
+
+        result.Diagnostics.Status.Should().Be(ToolOutcome.Error);
+        result.Summary.Should().NotContain("exploded");
         auditor.Entries.Should().ContainSingle().Which.Outcome.Should().Be(ToolOutcome.Error);
+    }
+
+    [Fact]
+    public async Task RunAsync_CancellationDuringValidation_PropagatesAndAuditsCanceled()
+    {
+        var auditor = new RecordingAuditor();
+        var validator = new Mock<IValidator<EchoArgs>>();
+        validator.Setup(v => v.ValidateAsync(It.IsAny<EchoArgs>(), It.IsAny<CancellationToken>()))
+            .ThrowsAsync(new OperationCanceledException());
+
+        var act = () => ToolRunner.RunAsync<EchoArgs, string>(
+            "echo",
+            new EchoArgs("hello"),
+            (_, _) => Task.FromResult(ToolResult.Ok("never", "never")),
+            validator: validator.Object,
+            auditor: auditor);
+
+        await act.Should().ThrowAsync<OperationCanceledException>();
+        auditor.Entries.Should().ContainSingle().Which.Outcome.Should().Be(ToolOutcome.Canceled);
+    }
+
+    [Fact]
+    public async Task RunAsync_RedactionHook_ControlsWhatTheAuditEntryCaptures()
+    {
+        var auditor = new RecordingAuditor();
+
+        await ToolRunner.RunAsync(
+            "echo",
+            new EchoArgs("hello"),
+            (args, _) => Task.FromResult(ToolResult.Ok(args.Text!, "Echoed.")),
+            auditor: auditor,
+            redactArguments: _ => "{\"text\":\"<redacted>\"}");
+
+        await ToolRunner.RunAsync(
+            "echo",
+            new EchoArgs("hello"),
+            (args, _) => Task.FromResult(ToolResult.Ok(args.Text!, "Echoed.")),
+            auditor: auditor,
+            redactArguments: _ => null);
+
+        auditor.Entries.Should().HaveCount(2);
+        auditor.Entries[0].ArgumentsJson.Should().Be("{\"text\":\"<redacted>\"}");
+        auditor.Entries[0].ArgumentsJson.Should().NotContain("hello");
+        auditor.Entries[1].ArgumentsJson.Should().BeNull();
     }
 
     [Fact]

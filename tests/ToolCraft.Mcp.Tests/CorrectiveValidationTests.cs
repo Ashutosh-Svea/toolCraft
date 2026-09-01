@@ -71,6 +71,26 @@ public class CorrectiveValidationTests
     }
 
     [Fact]
+    public void MustBeOneOf_EvaluatesTheProviderExactlyOncePerValidation()
+    {
+        var calls = 0;
+        var validator = new InlineValidator<QueryArgs>();
+        validator.RuleFor(a => a.Service).MustBeOneOf("service", () =>
+        {
+            calls++;
+            return Services;
+        });
+
+        var result = validator.Validate(new QueryArgs("checkout-svc", 10, "T-1"));
+
+        result.IsValid.Should().BeFalse();
+        calls.Should().Be(1);
+
+        var error = result.ToCorrectiveErrors().Should().ContainSingle().Subject;
+        error.Message.Should().Contain(error.ClosestMatches[0]);
+    }
+
+    [Fact]
     public void ToCorrectiveErrors_MapsPlainFailures_ToSnakeCaseCodesAndCamelCaseParameters()
     {
         var result = new QueryArgsValidator().Validate(new QueryArgs("auth", 500, "T-1"));

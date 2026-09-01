@@ -216,6 +216,73 @@ public class IncidentToolsTests
     }
 
     [Fact]
+    public async Task CorrelateIncident_OpenTicket_ExtendsTheWindowToNow()
+    {
+        // This open ticket was never updated after being opened 60 minutes ago. Its
+        // incident is still happening, so correlation must not stop 30 minutes after
+        // the last update; it must run through the sandbox's current time.
+        var ticket = Data.Tickets.Single(t => t.Title == "Login page shows error 502");
+
+        var result = await CreateTools().CorrelateIncident(server: null!, ticketId: ticket.Id);
+
+        var correlation = result.Data!;
+        correlation.WindowTo.Should().Be(Anchor);
+        correlation.Events.Should().Contain(e => e.Timestamp > Anchor.AddMinutes(-20));
+    }
+
+    [Fact]
+    public async Task CorrelateIncident_ResolvedTicket_KeepsTheBoundedWindow()
+    {
+        var ticket = Data.Tickets.Single(t => t.Title == "Checkout slow, orders timing out");
+
+        var result = await CreateTools().CorrelateIncident(server: null!, ticketId: ticket.Id);
+
+        result.Data!.WindowTo.Should().Be(ticket.UpdatedAt.AddMinutes(30));
+    }
+
+    [Fact]
+    public async Task QueryTelemetry_OptInWithExplicitBounds_DoesNotClaimAFullHistoryScan()
+    {
+        var result = await CreateTools().QueryTelemetry(
+            server: null!,
+            from: Anchor.AddHours(-9),
+            to: Anchor.AddHours(-4),
+            scanAllHistory: true);
+
+        result.Diagnostics.Status.Should().BeOneOf(ToolOutcome.Ok, ToolOutcome.Truncated);
+        result.Diagnostics.AppliedDefaults.Should().NotContain(n => n.Contains("full retained history"));
+        result.Data.Should().OnlyContain(e =>
+            e.Timestamp >= Anchor.AddHours(-9) && e.Timestamp <= Anchor.AddHours(-4));
+    }
+
+    [Fact]
+    public async Task QueryTelemetry_OptInWithReversedBounds_SwapsThemTransparently()
+    {
+        var result = await CreateTools().QueryTelemetry(
+            server: null!,
+            from: Anchor.AddHours(-4),
+            to: Anchor.AddHours(-9),
+            scanAllHistory: true);
+
+        result.Diagnostics.Status.Should().BeOneOf(ToolOutcome.Ok, ToolOutcome.Truncated);
+        result.Diagnostics.AppliedDefaults.Should().Contain(n => n.Contains("swapped"));
+        result.Data.Should().NotBeEmpty();
+    }
+
+    [Fact]
+    public async Task QueryTelemetry_EmptyWithOptInAlreadySet_DoesNotSuggestTheOptInAgain()
+    {
+        var result = await CreateTools().QueryTelemetry(
+            server: null!,
+            text: "no such message anywhere at all",
+            scanAllHistory: true);
+
+        result.Diagnostics.Status.Should().Be(ToolOutcome.Empty);
+        result.SuggestedNextSteps.Should().NotContain(s => s.Contains("scanAllHistory"));
+        result.SuggestedNextSteps.Should().NotBeEmpty();
+    }
+
+    [Fact]
     public async Task CorrelateIncident_UnknownTicket_ReturnsCorrectiveError()
     {
         var result = await CreateTools().CorrelateIncident(server: null!, ticketId: "TCK-0000");
