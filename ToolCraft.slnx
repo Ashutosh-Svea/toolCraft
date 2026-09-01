@@ -1,0 +1,12 @@
+<Solution>
+  <Folder Name="/samples/">
+    <Project Path="samples/IncidentSandbox/IncidentSandbox.csproj" />
+  </Folder>
+  <Folder Name="/src/">
+    <Project Path="src/ToolCraft.Mcp/ToolCraft.Mcp.csproj" />
+  </Folder>
+  <Folder Name="/tests/">
+    <Project Path="tests/IncidentSandbox.Tests/IncidentSandbox.Tests.csproj" />
+    <Project Path="tests/ToolCraft.Mcp.Tests/ToolCraft.Mcp.Tests.csproj" />
+  </Folder>
+</Solution>
