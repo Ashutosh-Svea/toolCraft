@@ -66,7 +66,9 @@ order: certificate expiry warning, twelve TLS handshake failures, gateway
 the agent can quote, and each suggests the next call, so even a weak agent
 walks the same path.
 
-Placeholder: a demo GIF of this triage session will go here.
+![ToolCraft demo](docs/assets/demo.gif)
+
+The demo follows a login incident from service health to the ticket and correlated telemetry.
 
 ### Claude Desktop
 
